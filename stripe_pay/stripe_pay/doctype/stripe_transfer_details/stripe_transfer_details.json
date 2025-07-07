@@ -1,0 +1,100 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-25 17:25:24.793706",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_ppey",
+  "reference_id",
+  "datetime",
+  "status",
+  "account",
+  "column_break_vevc",
+  "reference_doc",
+  "refrence_name",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_ppey",
+   "fieldtype": "Section Break",
+   "label": "Stripe Transfer Details"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Stripe Transfer Details",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "reference_id",
+   "fieldtype": "Data",
+   "label": "Reference Id"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "\npaid\nfailed\npending\ncancel"
+  },
+  {
+   "fieldname": "datetime",
+   "fieldtype": "Datetime",
+   "label": "Datetime"
+  },
+  {
+   "fieldname": "reference_doc",
+   "fieldtype": "Link",
+   "label": "Reference Doc",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "refrence_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Refrence Name",
+   "options": "reference_doc"
+  },
+  {
+   "fieldname": "column_break_vevc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "account",
+   "fieldtype": "Data",
+   "label": "Account"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2025-06-26 11:55:02.608060",
+ "modified_by": "Administrator",
+ "module": "Stripe Pay",
+ "name": "Stripe Transfer Details",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,54 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-25 17:21:48.776800",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "stripe_payment_settings_section",
+  "secret_key",
+  "publishable_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "secret_key",
+   "fieldtype": "Password",
+   "label": "Secret Key"
+  },
+  {
+   "fieldname": "publishable_key",
+   "fieldtype": "Password",
+   "label": "Publishable Key"
+  },
+  {
+   "fieldname": "stripe_payment_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Stripe Payment Settings"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2025-06-25 17:22:33.913723",
+ "modified_by": "Administrator",
+ "module": "Stripe Pay",
+ "name": "Stripe Payment Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
