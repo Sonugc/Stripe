@@ -12,7 +12,6 @@ frappe.ui.form.on("Sales Invoice", {
                             frappe.msgprint(__("Redirecting to Stripe payment page..."));
                             window.open(r.message.url, '_blank');
 
-                            // Reload doc to fetch stored Stripe IDs
                             frm.reload_doc();
                         } else {
                             frappe.msgprint(__("Failed to generate Stripe payment link."));
@@ -24,7 +23,6 @@ frappe.ui.form.on("Sales Invoice", {
             }, __("Actions"));
         }
 
-        // Show Stripe info if available
         if (frm.doc.stripe_session_id) {
             frm.add_custom_button(__("View Stripe Session"), () => {
                 window.open(`https://dashboard.stripe.com/test/checkouts/${frm.doc.stripe_session_id}`, '_blank');

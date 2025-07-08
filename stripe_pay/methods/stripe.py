@@ -2,6 +2,7 @@ import stripe
 import frappe
 from frappe import _
 from frappe.utils import flt, now_datetime
+from frappe.utils import nowdate
 
 connected_account_id = "acct_1RdUXWQw0gf1zitu"
 
@@ -101,12 +102,10 @@ def check_transfer_status(account, reference_id):
     stripe.api_key = sk
 
     try:
-        # Try as a Transfer first (Transfers are from platform)
         transfer = stripe.Transfer.retrieve(reference_id)
         return {"status": transfer.status}
     except stripe.error.InvalidRequestError:
         try:
-            # Try as a Payout (must include stripe_account)
             payout = stripe.Payout.retrieve(
                 reference_id,
                 stripe_account=account
@@ -119,7 +118,12 @@ def check_transfer_status(account, reference_id):
 
 
 @frappe.whitelist()
-def create_stripe_url(sales_invoice):
+def create_stripe_url(sales_invoice=None):
+    if not sales_invoice:
+        sales_invoice = frappe.local.request.args.get("sales_invoice")
+
+    if not sales_invoice:
+        frappe.throw(_("Missing Sales Invoice"))
     si_doc = frappe.get_doc("Sales Invoice", sales_invoice)
 
     if si_doc.docstatus != 1:
@@ -138,22 +142,21 @@ def create_stripe_url(sales_invoice):
                 "price_data": {
                     "currency": currency,
                     "product_data": {
-                        "name": f"Payment for {si_doc.name}",
+                        "name": f"Payment for {si_doc.name} by {si_doc.customer}",
                     },
                     "unit_amount": int(flt(si_doc.grand_total) * 100),
                 },
                 "quantity": 1,
             }],
             mode="payment",
-            success_url=frappe.utils.get_url(f"/success?invoice={si_doc.name}"),
-            cancel_url=frappe.utils.get_url(f"/cancel?invoice={si_doc.name}"),
+            success_url=frappe.utils.get_url(f"/api/method/stripe_pay.methods.stripe.handle_success_callback?invoice={si_doc.name}"),
+            cancel_url=frappe.utils.get_url(f"/api/method/stripe_pay.methods.stripe.handle_failure_callback?invoice={si_doc.name}"),
             metadata={
                 "sales_invoice": si_doc.name,
                 "customer": si_doc.customer
             }
         )
 
-        # Store session ID and payment intent (if available)
         si_doc.db_set("stripe_session_id", session.id)
         if session.get("payment_intent"):
             si_doc.db_set("stripe_payment_intent_id", session.payment_intent)
@@ -166,3 +169,67 @@ def create_stripe_url(sales_invoice):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Stripe Session Creation Failed")
         frappe.throw(_("Stripe Checkout Session creation failed: ") + str(e))
+
+
+
+@frappe.whitelist(allow_guest=True)
+def handle_success_callback():
+    try:
+        invoice_id = frappe.local.request.args.get("invoice")
+        frappe.log_error(invoice_id, "Callback Received for Invoice")
+
+        if not invoice_id:
+            frappe.throw(_("Missing invoice ID in query parameters"))
+
+        invoice = frappe.get_doc("Sales Invoice", invoice_id)
+        frappe.log_error(invoice.name, "Loaded Invoice")
+
+        if invoice.docstatus != 1:
+            frappe.throw(_("Sales Invoice must be submitted before making a payment."))
+
+        paid_from = frappe.get_cached_value("Company", invoice.company, "default_receivable_account")
+        paid_to = frappe.get_cached_value("Mode of Payment Account", {"parent": "Cash", "company": invoice.company}, "default_account")
+
+        if not paid_from or not paid_to:
+            frappe.throw(_("Paid From or Paid To account missing. Please check your accounting settings."))
+
+        payment_entry = frappe.new_doc("Payment Entry")
+        payment_entry.payment_type = "Receive"
+        payment_entry.company = invoice.company
+        payment_entry.posting_date = nowdate()
+        payment_entry.mode_of_payment = "Cash"
+        payment_entry.party_type = "Customer"
+        payment_entry.party = invoice.customer
+        payment_entry.paid_from = paid_from
+        payment_entry.paid_to = paid_to
+        payment_entry.paid_amount = invoice.outstanding_amount
+        payment_entry.received_amount = invoice.outstanding_amount
+
+        payment_entry.append("references", {
+            "reference_doctype": "Sales Invoice",
+            "reference_name": invoice.name,
+            "total_amount": invoice.grand_total,
+            "outstanding_amount": invoice.outstanding_amount,
+            "allocated_amount": invoice.outstanding_amount
+        })
+
+        payment_entry.insert()
+        payment_entry.submit()
+        frappe.db.commit()
+
+        frappe.log_error(payment_entry.name, "Payment Entry Created")
+
+        return {
+            "status": "success",
+            "invoice": invoice.name,
+            "payment_entry": payment_entry.name
+        }
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Payment Callback Error")
+        return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist(allow_guest=True)
+def handle_failure_callback():
+    frappe.throw(_("Payment failed or cancelled by the user. Please try again."))
