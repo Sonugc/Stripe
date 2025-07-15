@@ -124,6 +124,7 @@ def create_stripe_url(sales_invoice=None):
 
     if not sales_invoice:
         frappe.throw(_("Missing Sales Invoice"))
+    
     si_doc = frappe.get_doc("Sales Invoice", sales_invoice)
 
     if si_doc.docstatus != 1:
@@ -133,11 +134,12 @@ def create_stripe_url(sales_invoice=None):
     sk = stripe_settings.get_password("secret_key")
     stripe.api_key = sk
 
-    currency = ("USD").lower()
+    currency = "usd"  
 
     try:
         session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
+            payment_method_types=["us_bank_account"],
+            
             line_items=[{
                 "price_data": {
                     "currency": currency,
@@ -149,11 +151,39 @@ def create_stripe_url(sales_invoice=None):
                 "quantity": 1,
             }],
             mode="payment",
+            
             success_url=frappe.utils.get_url(f"/api/method/stripe_pay.methods.stripe.handle_success_callback?invoice={si_doc.name}"),
             cancel_url=frappe.utils.get_url(f"/api/method/stripe_pay.methods.stripe.handle_failure_callback?invoice={si_doc.name}"),
+            
             metadata={
                 "sales_invoice": si_doc.name,
                 "customer": si_doc.customer
+            },
+            
+            customer_creation="if_required",
+            
+            billing_address_collection="auto",
+            
+            custom_fields=[
+                {
+                    "key": "invoice_number",
+                    "label": {
+                        "type": "custom",
+                        "custom": "Invoice Number"
+                    },
+                    "type": "text",
+                    "optional": True
+                }
+            ],
+            
+            automatic_tax={"enabled": False},
+            
+            expires_at=int((now_datetime().timestamp() + 86400)),
+            
+            payment_method_options={
+                "us_bank_account": {
+                    "verification_method": "automatic"  
+                }
             }
         )
 
@@ -161,15 +191,17 @@ def create_stripe_url(sales_invoice=None):
         if session.get("payment_intent"):
             si_doc.db_set("stripe_payment_intent_id", session.payment_intent)
 
+        frappe.db.commit()
+
         return {
             "session_id": session.id,
-            "url": session.url
+            "url": session.url,
+            "payment_methods": ["card", "us_bank_account"]
         }
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Stripe Session Creation Failed")
         frappe.throw(_("Stripe Checkout Session creation failed: ") + str(e))
-
 
 
 @frappe.whitelist(allow_guest=True)
@@ -179,31 +211,60 @@ def handle_success_callback():
         frappe.log_error(invoice_id, "Callback Received for Invoice")
 
         if not invoice_id:
-            frappe.throw(_("Missing invoice ID in query parameters"))
+            frappe.local.response["type"] = "redirect"
+            frappe.local.response["location"] = "/app"
+            return
 
         invoice = frappe.get_doc("Sales Invoice", invoice_id)
         frappe.log_error(invoice.name, "Loaded Invoice")
 
         if invoice.docstatus != 1:
-            frappe.throw(_("Sales Invoice must be submitted before making a payment."))
+            frappe.local.response["type"] = "redirect"
+            frappe.local.response["location"] = f"/app/sales-invoice/{invoice_id}"
+            return
+
+        stripe_settings = frappe.get_single("Stripe Payment Settings")
+        sk = stripe_settings.get_password("secret_key")
+        stripe.api_key = sk
+        
+        session_id = invoice.stripe_session_id
+        if session_id:
+            session = stripe.checkout.Session.retrieve(session_id)
+            payment_intent = stripe.PaymentIntent.retrieve(session.payment_intent)
+            payment_method = stripe.PaymentMethod.retrieve(payment_intent.payment_method)
+            
+            frappe.log_error(f"Payment method used: {payment_method.type}", "Payment Method Info")
 
         paid_from = frappe.get_cached_value("Company", invoice.company, "default_receivable_account")
-        paid_to = frappe.get_cached_value("Mode of Payment Account", {"parent": "Cash", "company": invoice.company}, "default_account")
+        
+        paid_to = frappe.get_cached_value("Mode of Payment Account", {"parent": "Stripe", "company": invoice.company}, "default_account")
+        mode_of_payment = "Stripe"
+        
+        if not paid_to:
+            paid_to = frappe.get_cached_value("Mode of Payment Account", {"parent": "Cash", "company": invoice.company}, "default_account")
+            mode_of_payment = "Stripe"
 
         if not paid_from or not paid_to:
-            frappe.throw(_("Paid From or Paid To account missing. Please check your accounting settings."))
+            frappe.log_error("Paid From or Paid To account missing", "Payment Account Error")
+            frappe.local.response["type"] = "redirect"
+            frappe.local.response["location"] = f"/app/sales-invoice/{invoice_id}?payment_status=account_error"
+            return
 
         payment_entry = frappe.new_doc("Payment Entry")
         payment_entry.payment_type = "Receive"
         payment_entry.company = invoice.company
         payment_entry.posting_date = nowdate()
-        payment_entry.mode_of_payment = "Cash"
+        payment_entry.mode_of_payment = mode_of_payment
         payment_entry.party_type = "Customer"
         payment_entry.party = invoice.customer
         payment_entry.paid_from = paid_from
         payment_entry.paid_to = paid_to
         payment_entry.paid_amount = invoice.outstanding_amount
         payment_entry.received_amount = invoice.outstanding_amount
+        
+        if hasattr(invoice, 'stripe_session_id') and invoice.stripe_session_id:
+            payment_entry.reference_no = invoice.stripe_session_id
+            payment_entry.reference_date = nowdate()
 
         payment_entry.append("references", {
             "reference_doctype": "Sales Invoice",
@@ -213,23 +274,115 @@ def handle_success_callback():
             "allocated_amount": invoice.outstanding_amount
         })
 
-        payment_entry.insert()
+        payment_entry.insert(ignore_permissions=True)
         payment_entry.submit()
         frappe.db.commit()
 
         frappe.log_error(payment_entry.name, "Payment Entry Created")
 
-        return {
-            "status": "success",
-            "invoice": invoice.name,
-            "payment_entry": payment_entry.name
-        }
+        if hasattr(invoice, 'stripe_session_id') and invoice.stripe_session_id:
+            create_stripe_transfer_log(
+                invoice.stripe_session_id, 
+                "paid", 
+                "Sales Invoice", 
+                invoice.name
+            )
+
+        frappe.local.response["type"] = "redirect"
+        frappe.local.response["location"] = f"/app/sales-invoice/{invoice_id}?payment_status=success&payment_entry={payment_entry.name}"
+        return
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Payment Callback Error")
-        return {"status": "error", "message": str(e)}
+        invoice_id = frappe.local.request.args.get("invoice", "")
+        if invoice_id:
+            frappe.local.response["type"] = "redirect"
+            frappe.local.response["location"] = f"/app/sales-invoice/{invoice_id}?payment_status=error"
+        else:
+            frappe.local.response["type"] = "redirect"
+            frappe.local.response["location"] = "/app"
+        return
 
+@frappe.whitelist(allow_guest=True)
+def handle_failure_callback():
+    invoice_id = frappe.local.request.args.get("invoice", "")
+    frappe.log_error(f"Payment cancelled for invoice {invoice_id}", "Payment Cancelled")
+    
+    if invoice_id:
+        frappe.local.response["type"] = "redirect"
+        frappe.local.response["location"] = f"/app/sales-invoice/{invoice_id}?payment_status=cancelled"
+    else:
+        frappe.local.response["type"] = "redirect"
+        frappe.local.response["location"] = "/app"
+    return
+
+
+@frappe.whitelist(allow_guest=True)
+def stripe_webhook():
+    """Handle Stripe webhook events for payment status updates"""
+    try:
+        payload = frappe.request.get_data()
+        sig_header = frappe.request.headers.get('Stripe-Signature')
+        
+        stripe_settings = frappe.get_single("Stripe Payment Settings")
+        endpoint_secret = stripe_settings.get_password("webhook_secret")
+        
+        if not endpoint_secret:
+            frappe.log_error("Webhook secret not configured", "Stripe Webhook")
+            return {"status": "error", "message": "Webhook secret not configured"}
+        
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, endpoint_secret
+        )
+
+        if event['type'] == 'checkout.session.completed':
+            session = event['data']['object']
+            handle_checkout_session_completed(session)
+        elif event['type'] == 'payment_intent.succeeded':
+            payment_intent = event['data']['object']
+            handle_payment_intent_succeeded(payment_intent)
+        elif event['type'] == 'payment_intent.payment_failed':
+            payment_intent = event['data']['object']
+            handle_payment_intent_failed(payment_intent)
+
+        return {"status": "success"}
+
+    except ValueError as e:
+        frappe.log_error(f"Invalid payload: {str(e)}", "Stripe Webhook")
+        return {"status": "error", "message": "Invalid payload"}
+    except stripe.error.SignatureVerificationError as e:
+        frappe.log_error(f"Invalid signature: {str(e)}", "Stripe Webhook")
+        return {"status": "error", "message": "Invalid signature"}
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Webhook Error")
+        return {"status": "error", "message": "Webhook processing failed"}
+
+def handle_checkout_session_completed(session):
+    """Handle completed checkout session"""
+    try:
+        sales_invoice = session.metadata.get('sales_invoice')
+        if sales_invoice:
+            frappe.log_error(f"Checkout session completed for invoice {sales_invoice}", "Stripe Webhook")
+    except Exception as e:
+        frappe.log_error(f"Error processing checkout session: {str(e)}", "Stripe Webhook")
+
+def handle_payment_intent_succeeded(payment_intent):
+    """Handle successful payment intent (useful for ACH payments)"""
+    try:
+        frappe.log_error(f"Payment intent succeeded: {payment_intent.id}", "Stripe Webhook")
+    except Exception as e:
+        frappe.log_error(f"Error processing payment success: {str(e)}", "Stripe Webhook")
+
+def handle_payment_intent_failed(payment_intent):
+    """Handle failed payment intent"""
+    try:
+        frappe.log_error(f"Payment intent failed: {payment_intent.id}", "Stripe Webhook")
+    except Exception as e:
+        frappe.log_error(f"Error processing payment failure: {str(e)}", "Stripe Webhook")
 
 @frappe.whitelist(allow_guest=True)
 def handle_failure_callback():
     frappe.throw(_("Payment failed or cancelled by the user. Please try again."))
+
+
+
