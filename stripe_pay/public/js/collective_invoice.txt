@@ -5,9 +5,6 @@ frappe.ui.form.on('Collective Invoices', {
                 pay_with_stripe(frm);
             }, __('Actions'));
         }
-             if (frm.doc.custom_stripe_session_id) {
-            frm.set_value('status', 'Paid');
-        }
     },
 
 });

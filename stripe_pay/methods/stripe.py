@@ -196,7 +196,7 @@ def create_stripe_url(sales_invoice=None):
         return {
             "session_id": session.id,
             "url": session.url,
-            "payment_methods": ["card", "us_bank_account"]
+            "payment_methods": ["us_bank_account"]
         }
 
     except Exception as e:
