@@ -164,7 +164,7 @@ def create_stripe_url_collective(collective_invoice=None):
         site_url = frappe.utils.get_url()
         
         session = stripe.checkout.Session.create(
-            payment_method_types=[ "us_bank_account"],
+            payment_method_types=["us_bank_account"],
             
             line_items=[{
                 "price_data": {
@@ -678,6 +678,7 @@ def create_stripe_url(sales_invoice=None):
 def handle_success_callback():
     """Original success callback for Sales Invoice"""
     try:
+        frappe.throw(_("This method is deprecated. Please use the new collective payment methods."))
         invoice_id = frappe.local.request.args.get("invoice")
         frappe.log_error(invoice_id, "Callback Received for Invoice")
 
@@ -762,7 +763,6 @@ def handle_success_callback():
         frappe.local.response["type"] = "redirect"
         frappe.local.response["location"] = f"/app/sales-invoice/{invoice_id}?payment_status=success&payment_entry={payment_entry.name}"
         return
-    
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Payment Callback Error")

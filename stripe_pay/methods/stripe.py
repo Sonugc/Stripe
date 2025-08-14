@@ -196,7 +196,7 @@ def create_stripe_url(sales_invoice=None):
         return {
             "session_id": session.id,
             "url": session.url,
-            "payment_methods": ["us_bank_account"]
+            "payment_methods": ["card", "us_bank_account"]
         }
 
     except Exception as e:
@@ -383,6 +383,5 @@ def handle_payment_intent_failed(payment_intent):
 @frappe.whitelist(allow_guest=True)
 def handle_failure_callback():
     frappe.throw(_("Payment failed or cancelled by the user. Please try again."))
-
 
 

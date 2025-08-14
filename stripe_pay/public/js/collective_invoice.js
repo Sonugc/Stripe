@@ -5,11 +5,11 @@ frappe.ui.form.on('Collective Invoices', {
                 pay_with_stripe(frm);
             }, __('Actions'));
         }
-             if (frm.doc.custom_stripe_session_id) {
+        if (frm.doc.custom_stripe_session_id) {
             frm.set_value('status', 'Paid');
+            frm.save(); 
         }
-    },
-
+    }
 });
 
 function pay_with_stripe(frm) {
@@ -22,7 +22,7 @@ function pay_with_stripe(frm) {
         method: "stripe_pay.methods.stripe_collective.create_stripe_url_collective",
 
         args: {
-            collective_invoice: frm.doc.name  
+            collective_invoice: frm.doc.name  // Correct parameter
         },
         callback: function(r) {
             if (r.message && r.message.url) {
