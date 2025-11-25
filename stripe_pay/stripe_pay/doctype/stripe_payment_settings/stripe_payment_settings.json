@@ -7,7 +7,9 @@
  "field_order": [
   "stripe_payment_settings_section",
   "secret_key",
-  "publishable_key"
+  "publishable_key",
+  "stripe_webhook_secret",
+  "connected_account_id"
  ],
  "fields": [
   {
@@ -24,13 +26,23 @@
    "fieldname": "stripe_payment_settings_section",
    "fieldtype": "Section Break",
    "label": "Stripe Payment Settings"
+  },
+  {
+   "fieldname": "stripe_webhook_secret",
+   "fieldtype": "Password",
+   "label": "Stripe Webhook Secret"
+  },
+  {
+   "fieldname": "connected_account_id",
+   "fieldtype": "Password",
+   "label": "Connected Account ID"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-06-25 17:22:33.913723",
+ "modified": "2025-11-18 10:33:26.228133",
  "modified_by": "Administrator",
  "module": "Stripe Pay",
  "name": "Stripe Payment Settings",
@@ -48,6 +60,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": []

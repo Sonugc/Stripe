@@ -50,7 +50,6 @@ def create_stripe_payment_collective(collective_invoice):
         create_stripe_transfer_log("N/A", "failed", "Collective Invoices", ci_doc.name)
         frappe.throw(f"Stripe Payout failed: {e}")
 
-    # Create payment entry for collective invoice
     payment_entry = create_collective_payment_entry(ci_doc, transfer_id)
 
     return {

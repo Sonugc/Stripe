@@ -20,7 +20,9 @@ app_license = "mit"
 # 		"has_permission": "stripe_pay.api.permission.has_app_permission"
 # 	}
 # ]
-
+override_whitelisted_methods = {
+    "stripe_pay.api.stripe_webhook.stripe_payment_webhook": "stripe_pay.api.stripe_webhook.stripe_payment_webhook"
+}
 # Includes in <head>
 # ------------------
 
